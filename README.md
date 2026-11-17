@@ -39,7 +39,30 @@ On the save and load screen:
 
 - The TV shows 256 by 192 pixels of the game's 320 by 200. The view follows the pointer.
 - Music and sound play on the console's sound chip.
-- If the cart's USB port is plugged into a computer when the game starts, the game's MT-32 music goes to the computer as MIDI instead. To hear it, use an MT-32 or an MT-32 emulator such as Munt. If the computer asks whether to allow the cart, say yes. Or press fire to play without MIDI.
+
+## Hear the MT-32 music on your computer
+
+The game also has music for the Roland MT-32. The cart can send it out of its USB-C port to a computer, and the free Parrot Cart MIDI program plays it there, on an emulated MT-32. Get it for macOS, Windows or Linux from https://github.com/plasticbugs/parrot-cart-midi/releases
+
+It needs the ROM files from a Roland CM-32L or MT-32 that you own. CM-32L ROMs are best, because the game uses sound effects that only the CM-32L has.
+
+1. Open Parrot Cart MIDI.
+   - macOS: open the app. The first time, macOS blocks it. Go to System Settings > Privacy & Security, and click **Open Anyway**.
+   - Windows: open `parrot-midi.exe`. If Windows says it protected your PC, click **More info**, then **Run anyway**.
+   - Linux: run `./parrot-midi`.
+2. Click **Choose ROM folder…** and pick the folder with your ROM files.
+3. Plug the cart's USB-C port into the computer.
+4. Start the game. The window says **Connected to Parrot Cart MIDI**, and the music plays on the computer.
+
+Open the program before you start the game. The game sets up the MT-32's instruments as it starts.
+
+On a Mac with Apple silicon, macOS asks whether to allow the accessory to connect the first time you plug in the cart. Click **Allow**. This is macOS checking before a new USB device can talk to it. The cart only sends music. If you clicked **Don't Allow**, unplug the cart, plug it in again, and click **Allow**. Until the computer allows the cart, the TV says that a computer is on the USB port. Press fire there to play without MIDI.
+
+Have a real MT-32 or CM-32L? Connect it to the computer with a USB MIDI cable. In Parrot Cart MIDI, choose the cable under **Play on**. The program sends the music straight to it, and needs no ROMs.
+
+Older versions of this plugin call the cart "MovieCart MIDI". Parrot Cart MIDI finds the cart by either name.
+
+With nothing plugged into the cart's USB-C port, the music plays on the console's own sound chip.
 
 ## Credits
 
@@ -71,7 +94,7 @@ On Ubuntu, `tools/ci/setup.sh` installs the same tools that GitHub uses to
 build each release.
 
 `CART-README.md` is the text the cart shows on the plugin's page. It is
-the start of this README.
+the start of this README, with a shorter MIDI section.
 
 ## License
 

@@ -39,7 +39,22 @@ On the save and load screen:
 
 - The TV shows 256 by 192 pixels of the game's 320 by 200. The view follows the pointer.
 - Music and sound play on the console's sound chip.
-- If the cart's USB port is plugged into a computer when the game starts, the game's MT-32 music goes to the computer as MIDI instead. To hear it, use an MT-32 or an MT-32 emulator such as Munt. If the computer asks whether to allow the cart, say yes. Or press fire to play without MIDI.
+
+## Hear the MT-32 music on your computer
+
+The game's MT-32 music can play on a computer. Get the free Parrot Cart MIDI program for macOS, Windows or Linux. It's on GitHub at `plasticbugs/parrot-cart-midi`.
+
+1. Open Parrot Cart MIDI. Pick the folder with the ROMs from your CM-32L or MT-32.
+2. Plug the cart's USB-C port into the computer.
+3. Start the game.
+
+If a Mac asks to allow the accessory, click Allow. If the TV says a computer is on the USB port, press fire to play without MIDI.
+
+For a real MT-32, choose its USB MIDI cable under Play on.
+
+Older versions call the cart MovieCart MIDI. Parrot Cart MIDI finds either name.
+
+With nothing plugged into the USB-C port, the music plays on the console's own sound chip.
 
 ## Credits
 
