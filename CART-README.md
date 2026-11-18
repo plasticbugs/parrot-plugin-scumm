@@ -54,7 +54,7 @@ For a real MT-32, choose its USB MIDI cable under Play on.
 
 Older versions call the cart MovieCart MIDI. Parrot Cart MIDI finds either name.
 
-With nothing plugged into the USB-C port, the music plays on the console's own sound chip.
+With nothing plugged into the USB-C port, the music plays on the ColecoVision's sound chip.
 
 ## Credits
 

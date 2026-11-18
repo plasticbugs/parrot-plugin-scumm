@@ -58,11 +58,11 @@ Open the program before you start the game. The game sets up the MT-32's instrum
 
 On a Mac with Apple silicon, macOS asks whether to allow the accessory to connect the first time you plug in the cart. Click **Allow**. This is macOS checking before a new USB device can talk to it. The cart only sends music. If you clicked **Don't Allow**, unplug the cart, plug it in again, and click **Allow**. Until the computer allows the cart, the TV says that a computer is on the USB port. Press fire there to play without MIDI.
 
-Have a real MT-32 or CM-32L? Connect it to the computer with a USB MIDI cable. In Parrot Cart MIDI, choose the cable under **Play on**. The program sends the music straight to it, and needs no ROMs.
+If you have a real MT-32 or CM-32L, connect it to the computer with a USB MIDI cable. In Parrot Cart MIDI, choose the cable under **Play on**. The program sends the music straight to it, so you don't need ROMs.
 
 Older versions of this plugin call the cart "MovieCart MIDI". Parrot Cart MIDI finds the cart by either name.
 
-With nothing plugged into the cart's USB-C port, the music plays on the console's own sound chip.
+With nothing plugged into the cart's USB-C port, the music plays on the ColecoVision's sound chip.
 
 ## Credits
 
@@ -80,7 +80,7 @@ Ninja, Python 3, sjasmplus and picotool. Releases are built with the Arm
 GNU Toolchain 9-2019-q4 (GCC 9.2.1) and picotool 2.3.1. With those you get
 the same file, byte for byte.
 
-This plugin uses the pico-sdk's own copy of TinyUSB. Run
+This plugin uses the copy of TinyUSB that comes with the pico-sdk. Run
 `git submodule update --init lib/tinyusb` in your pico-sdk folder first.
 
 ```sh
