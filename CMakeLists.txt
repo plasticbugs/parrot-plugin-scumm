@@ -27,9 +27,10 @@ pico_sdk_init()
 include(${PARROTCART_SDK}/sdk/cvplugin.cmake)
 
 # The same source makes the same file, whenever it's built: the compiler's
-# __DATE__ and __TIME__ (the build date in the binary info) come from
-# SOURCE_DATE_EPOCH, fixed here at the tested build's, 2026-11-15 19:28:57 UTC.
-set(BUILD_EPOCH 1794770937)
+# __DATE__ and __TIME__ (ScummVM's build date, in the binary) come from
+# SOURCE_DATE_EPOCH, fixed here at the released build's,
+# 2026-11-18 20:00:00 UTC.
+set(BUILD_EPOCH 1795032000)
 set(CMAKE_C_COMPILER_LAUNCHER ${CMAKE_COMMAND} -E env SOURCE_DATE_EPOCH=${BUILD_EPOCH})
 set(CMAKE_CXX_COMPILER_LAUNCHER ${CMAKE_COMMAND} -E env SOURCE_DATE_EPOCH=${BUILD_EPOCH})
 
@@ -66,6 +67,7 @@ target_compile_definitions(scumm PRIVATE __RP2350__=1 CABAL_HAVE_STDINT_H=1 ENAB
 # from here, so the build is the same wherever the repository is.
 target_compile_options(scumm PRIVATE -fmacro-prefix-map=${CMAKE_CURRENT_LIST_DIR}/=)
 cvframes_use(scumm)
+cvframes_serve2(scumm)   # core 1's bus loop acts on two samples of the pins that agree (sdk/cvfserve.S)
 cvsd_use(scumm)
 cvpsram_use(scumm)
 # a USB keyboard and mouse (usbinput.c). TinyUSB 0.18's hub driver asks for
@@ -77,6 +79,6 @@ set_source_files_properties(${PICO_TINYUSB_PATH}/src/host/hub.c
     TARGET_DIRECTORY scumm PROPERTIES HEADER_FILE_ONLY TRUE)
 pico_enable_stdio_usb(scumm 0)
 pico_enable_stdio_uart(scumm 0)
-cvcart_plugin(scumm ID parrotcart.scumm NAME "SCUMM" VERSION 0.2.7 BY "Parrot Cart"
+cvcart_plugin(scumm ID parrotcart.scumm NAME "SCUMM" VERSION 0.2.9 BY "Parrot Cart"
               HOME /SCUMM OPENS .lfl .000 ICON src/scumm_icon.txt FILE_ICON src/scumm_file_icon.txt XIP
               README CART-README.md)

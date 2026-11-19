@@ -33,7 +33,7 @@ typedef struct {
 
 typedef struct {
     int x, y;              // the window's top left in the picture: multiples of 8
-    int split;             // the first line of the verb area (a multiple of 8; 144 in v4 games)
+    int split;             // the first line of the verb area (a multiple of 8; 144 in most games, 200: none)
     int bx;                // the verb area's window's left
 } scummcv_view_t;
 

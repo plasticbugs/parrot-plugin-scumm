@@ -18,6 +18,7 @@ On the ColecoVision controller:
 - Keypad 0 skips a line of talk.
 - Keypad 4 and 6 move the view left and right, and it stays there.
 - Keypad 5 centers the view and lets it follow the pointer again.
+- Keypad 1 shows the whole screen as one view. Press it again to give the verbs their own view.
 - Hold keypad 7 for a second to save to slot 1, or 9 to load it.
 - Hold keypad # for half a second to open the save and load screen.
 - Press RESET on the console to go back to the menu.
@@ -38,6 +39,7 @@ On the save and load screen:
 ## Notes
 
 - The TV shows 256 by 192 pixels of the game's 320 by 200. The view follows the pointer.
+- The verbs and inventory at the bottom have a view of their own, so they stay on screen when the room scrolls. When a game uses the whole screen for the room, as Fate of Atlantis does at the start, the plugin uses one view.
 - Music and sound play on the console's sound chip.
 
 ## Hear the MT-32 music on your computer

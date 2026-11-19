@@ -906,6 +906,8 @@ public:
 	bool movieCartCutscene() const { return vm.cutSceneStackPointer > 0 || _userPut <= 0; }
 	int movieCartCutsceneDepth() const { return vm.cutSceneStackPointer; }   // MovieCart: for tests
 	int movieCartUserPut() const { return _userPut; }
+	int movieCartVerbTop() const { return _virtscr[kVerbVirtScreen].topline; }   // MovieCart: where the room ends
+	int movieCartVerbHeight() const { return _virtscr[kVerbVirtScreen].getHeight(); }
 	int16 _talkDelay;
 	int _NES_lastTalkingActor;
 	int _NES_talkColor;

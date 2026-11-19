@@ -92,7 +92,7 @@ namespace Scumm { extern Common::Rect g_movieCartMsgRect; }   // string.cpp (Mov
 #define NUDGE        8              // keypad 4 / 6: the room's window moves this far
 #define NUDGE_HOLD_US 300000        // and held, again after this
 #define NUDGE_REP_US 70000          // and every this
-#define SPLIT        144            // SCUMM v3-v5: the verb area starts here
+#define SPLIT        144            // SCUMM v3-v5: the verb area starts here, as a rule (split() has where it is now)
 #define STILL_US     500000         // the pointer this still: the window holds an actor's message
 #define QUEUE        32             // events waiting for the engine
 #define INPUT_US     4000           // the controller (and USB's) read this often (the console sends it each TV frame)
@@ -420,6 +420,7 @@ private:
 	void choose_view(scummcv_view_t *v);
 	void input(uint32_t now);
 	void keep_in_window();
+	int split() const;
 
 	byte _screen[SCUMMCV_W * SCUMMCV_H];
 	Graphics::Surface _surface;
@@ -447,6 +448,7 @@ private:
 	bool _viewPinned = false;       // 4 or 6 placed it, and the pointer hasn't moved since
 	bool _centreNow = false;        // 5: the next window is the middle (unless a message or cutscene wants it)
 	bool _viewPoke = false;         // look at the window again now
+	bool _oneWindow = false;        // keypad 1: one window for all 200 lines, verb area or not
 	uint32 _nudgeAt = 0;
 	void nudge(int dir);
 	bool _menuWanted = false, _menuOpen = false;
@@ -513,25 +515,36 @@ void OSystem_Cart::choose_view(scummcv_view_t *v) {
 	const Scumm::ScummEngine *s = static_cast<const Scumm::ScummEngine *>(g_engine);
 	const Common::Rect &m = Scumm::g_movieCartMsgRect;
 	const int mx = _mx >> 8, my = _my >> 8;
+	v->split = split();
 	if (_manualX >= 0) {
 		// where 4 / 6 put it, but for the pointer pushed against its edge
 		scummcv_view_t a = *v;
 		a.x = _manualX;
 		if (_mouseVisible) scummcv_view(&a, mx, my);
-		if (_viewPinned || my >= SPLIT || (mx >= _manualX + 4 && mx <= _manualX + 251)) a.x = _manualX;
+		if (_viewPinned || my >= a.split || (mx >= _manualX + 4 && mx <= _manualX + 251)) a.x = _manualX;
 		_manualX = a.x;
 		*v = a;
 	} else if (s && s->movieCartCutscene()) {
 		v->x = (SCUMMCV_W - 256) / 2;
 		v->bx = 0;
-		if (s->_haveMsg && m.top < SPLIT) scummcv_view_keep(v, m.left, m.right);
-	} else if (s && s->_haveMsg && m.top < SPLIT && time_us_32() - _movedUs > STILL_US) {
+		if (s->_haveMsg && m.top < v->split) scummcv_view_keep(v, m.left, m.right);
+	} else if (s && s->_haveMsg && m.top < v->split && time_us_32() - _movedUs > STILL_US) {
 		scummcv_view_keep(v, m.left, m.right);
 	} else {
 		scummcv_view(v, mx, my);
 		if (_centreNow) v->x = (SCUMMCV_W - 256) / 2;   // 5: the middle, then following as ever
 	}
 	_centreNow = false;
+}
+
+// the first line of the verb area's own window: where the game's verb area
+// starts (144 in most games), or none (200) while the game gives the room
+// all 200 lines (Fate of Atlantis's opening) or keypad 1 asked for one
+// window. Rounded up to a whole row of cells.
+int OSystem_Cart::split() const {
+	const Scumm::ScummEngine *s = static_cast<const Scumm::ScummEngine *>(g_engine);
+	if (_oneWindow || !s || s->movieCartVerbHeight() <= 0) return SCUMMCV_H;
+	return CLIP((s->movieCartVerbTop() + 7) & ~7, 0, SCUMMCV_H);
 }
 
 // ---- the save and load screen (savemenu.h) -----------------------------------------
@@ -715,7 +728,7 @@ void OSystem_Cart::service() {
 		const Scumm::ScummEngine *se = static_cast<const Scumm::ScummEngine *>(g_engine);
 		if (_menuOpen) {
 			if (msg_waiting) offer_msg();   // the save screen is the picture
-		} else if (!_ready && (_mouseVisible || _viewPoke || (se && se->movieCartCutscene()))) {
+		} else if (!_ready && (_mouseVisible || _viewPoke || (se && se->movieCartCutscene()) || split() != _view.split)) {
 			scummcv_view_t v = _view;
 			choose_view(&v);
 			_ready = memcmp(&v, &_view, sizeof v) != 0;
@@ -795,7 +808,7 @@ void OSystem_Cart::input(uint32_t now) {
 		byte flags = (ctrl ? Common::KBD_CTRL : 0) | (alt ? Common::KBD_ALT : 0) | (shift ? Common::KBD_SHIFT : 0);
 		push(down ? Common::EVENT_KEYDOWN : Common::EVENT_KEYUP, kc, ascii, flags);
 	}
-	// the keypad: * = Esc and 0 = '.' when pressed; 7 / 9 held: save / load
+	// the keypad: * = Esc and 0 = '.' when pressed; 1 one window or two; 7 / 9 held: save / load
 	if (key != _keyCode) {
 		_keyCode = key;
 		_keySince = now;
@@ -806,13 +819,17 @@ void OSystem_Cart::input(uint32_t now) {
 			nudge(key == 0x2 ? -1 : 1);
 			_nudgeAt = now + NUDGE_HOLD_US;
 		}
+		if (key == 0xD) {                   // 1: one window, or the verb area's own again
+			_oneWindow = !_oneWindow;
+			_viewPoke = true;
+		}
 		if (key == 0x3) {                   // 5: the middle, and following again at once
 			const int mid = (SCUMMCV_W - 256) / 2;
 			_manualX = -1;
 			_viewPinned = false;
 			_centreNow = true;
 			// the pointer into the middle window, clear of the edges that scroll it
-			if ((_my >> 8) < SPLIT) _mx = CLIP<int32>(_mx, (mid + 32) << 8, ((mid + 223) << 8) | 255);
+			if ((_my >> 8) < _view.split) _mx = CLIP<int32>(_mx, (mid + 32) << 8, ((mid + 223) << 8) | 255);
 			_moved = true;
 			_viewPoke = true;
 		}
