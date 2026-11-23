@@ -151,6 +151,23 @@ typedef struct {
     uint16_t refresh_at;
     uint8_t refresh_pass;
     uint8_t refresh_seen[3][256];
+#ifdef NESCV_PCM
+    bool astray;               // the last list ran back to back: this one starts anywhere in the frame
+    bool resync;               // the last was the short list after those: this one starts in the vertical blank, maybe late
+    bool turn_due;             // the last list had the flip as LATE_REG's 3s: this one writes it at its start
+    uint8_t up_off;            // bytes of the upload at up_head in (a list with samples sends it a run at a time)
+    uint16_t names_at;         // the names before this are in (lists with samples)
+    uint16_t pad_at;           // where the next run that only takes up time rewrites VRAM as it is
+    uint16_t x_at, x_off;      // the caller's writes: the next one, and its bytes in (lists with samples)
+    struct {
+        uint32_t lists;        // lists with samples
+        uint32_t turns;        // flips in such lists by LATE_REG's 3s
+        uint32_t picture_bytes, pad_bytes;
+        uint32_t slack_max;    // the most T a sample went early by (less than a VRAM byte's, as a rule)
+        uint32_t over;         // samples that went late (their slot had more than its time: none, as a rule)
+        uint32_t t_min, t_max; // their lengths
+    } pcm;
+#endif
 } nescv_t;
 
 void nescv_init(nescv_t *e);
@@ -195,6 +212,33 @@ size_t nescv_tv_frame(nescv_t *e, const uint8_t *psg, int npsg, uint8_t *out);
 // one on screen now, or the one whose cells are all in), for writes that
 // go with it (a pointer's sprite in a window that moved)
 uint64_t nescv_next_shown(const nescv_t *e);
+
+#ifdef NESCV_PCM
+// ---- samples in the lists: built with -DNESCV_PCM, for gbkernel built with -DLATE_REG --
+// A list with NESCV_PCM_N samples in it, each nb PSG bytes, 2 or 3 (the
+// SCUMM plugin's speech: tones parked at a period of 1, their attenuators a
+// DAC; ../starwars/swcv.h's way). The samples are spread evenly through
+// the list, the picture's VRAM runs between them, and the list is cut to
+// NESCV_PCM_T, a little over a TV frame: the console finds the vertical
+// blank already past at its end and goes straight into the next, so the
+// samples keep their spacing from list to list, and such a list starts
+// anywhere in the frame. A flip (R2, the names on screen) can't wait for
+// the vertical blank there: it goes in as LATE_REG's 3 every few thousand
+// T of one list, so the first after the NMI writes it, and the next list
+// writes it again at its start (where it has been written already, or the
+// frame turned after the last 3 and that list starts in the vertical
+// blank). psg: the tones' bytes, which go out with the first samples. The
+// list after the last of them is a short one, with the sound alone, and
+// the console is back in step with the vertical blank after it.
+#define NESCV_PCM_N 100
+#define NESCV_PCM_T 60036      // a list with samples, in T: 5,962 samples a second
+// with three bytes a sample, longer: MAME's console runs these lists 0.6 %
+// quicker than the kernel's costs say (its PSG READY shorter, perhaps), and
+// a list must still run past the next vertical blank there: 5,933 a second
+#define NESCV_PCM_T3 60336
+#define NESCV_PCM_TN(nb) ((nb) == 3 ? NESCV_PCM_T3 : NESCV_PCM_T)
+size_t nescv_tv_frame_pcm(nescv_t *e, const uint8_t *psg, int npsg, const uint8_t *pcm, int nb, uint8_t *out);
+#endif
 
 // ---- the caller's own writes: sprites, say ---------------------------------------
 // The kernel leaves sprites off ($1B00 = $D0; sprite patterns at $3800, R1

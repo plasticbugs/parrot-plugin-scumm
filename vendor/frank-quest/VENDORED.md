@@ -151,9 +151,17 @@ upstream (`cmp` of each against the clone, 2026-11-13).
   resampling it, and the resampler's vertical scale is `targetHeight /
   inHeight` (upstream: `/ inWidth`, which squashed the picture into the
   top 60 % and read past it for the rest).
+- `src/audio/audiodev/opl.h/.cpp`: `OPL::g_movieCartOPL`, a factory
+  `Config::create()` uses instead of an emulator when it is set. The cart's
+  (`../../psgmix.cpp`) is an OPL2 that keeps the registers and makes no
+  sound: the AdLib driver's notes go to the PSG (SCUMM v5, iMUSE).
 - `src/engines/scumm/scumm.h`: `movieCartCutscene()` (a cutscene, or the
   player's input off), `movieCartCutsceneDepth()` and `movieCartUserPut()`
   (for the test host's `SCUMM_STATELOG`).
+- `src/frank_quest_fs.c`: files of 1 MB or more get FatFs's fast seek, the
+  cluster map made the first time a file opens and kept, so a seek into
+  Fate of Atlantis's MONSTER.SOU (each line of speech) doesn't walk the
+  FAT from the file's start.
 
 ## Building it
 

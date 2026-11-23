@@ -40,7 +40,8 @@ On the save and load screen:
 
 - The TV shows 256 by 192 pixels of the game's 320 by 200. The view follows the pointer.
 - The verbs and inventory at the bottom have a view of their own, so they stay on screen when the room scrolls. When a game uses the whole screen for the room, as Fate of Atlantis does at the start, the plugin uses one view.
-- Music and sound play on the console's sound chip.
+- Music and sound play on the console's sound chip. In Fate of Atlantis and Monkey Island 2 it plays the AdLib music, three notes and a drum at a time.
+- Fate of Atlantis's speech plays on the sound chip when the music plays on a computer over MIDI (below). Without MIDI the game shows the lines as text.
 
 ## Hear the MT-32 music on your computer
 
@@ -56,7 +57,7 @@ For a real MT-32, choose its USB MIDI cable under Play on.
 
 Older versions call the cart MovieCart MIDI. Parrot Cart MIDI finds either name.
 
-With nothing plugged into the USB-C port, the music plays on the ColecoVision's sound chip.
+With nothing plugged into the USB-C port, the music plays on the ColecoVision's sound chip. With MIDI playing, Fate of Atlantis's speech plays on the ColecoVision, about a fifth of a second after its text shows.
 
 ## Credits
 

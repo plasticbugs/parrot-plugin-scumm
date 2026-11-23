@@ -226,6 +226,9 @@ class Kernel:
         elif op == 0x5f: self.e = self.a
         elif op == 0x57: self.d = self.a
         elif op == 0x6f: self.l = self.a
+        elif op == 0x47: self.b = self.a               # (these three: LATE_REG's 3 v r, gbkernel.asm)
+        elif op == 0xb8: self.z = self.a == self.b
+        elif op == 0x00: pass
         elif op == 0x7b: self.a = self.e
         elif op == 0x7a: self.a = self.d
         elif op == 0x07: self.a = (self.a << 1 | self.a >> 7) & 255

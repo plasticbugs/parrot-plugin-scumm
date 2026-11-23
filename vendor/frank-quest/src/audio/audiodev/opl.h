@@ -159,6 +159,11 @@ class RealOPL : public virtual OPL, protected virtual Audio::HardwareAudioDevice
 class EmulatedOPL : public virtual OPL, protected virtual Audio::EmulatedAudioDevice {
 };
 
+// MovieCart: when set, Config::create() makes this OPL in place of an
+// emulator (the SCUMM plugin's psgmix: the AdLib driver's register writes
+// turned into the ColecoVision's PSG)
+extern OPL *(*g_movieCartOPL)(Config::OplType type);
+
 } // End of namespace OPL
 
 #endif

@@ -24,6 +24,9 @@
 ;   active display part, VRAM writes 31 T apart (the console's floor is 28)
 ;     1 lo hi n d*n     VRAM run
 ;     2 n d*n           PSG bytes
+;     3 v r             (built with -DLATE_REG only) VDP register r ($80|r)
+;                       = v if the frame has turned since the list began (an
+;                       NMI: the TV is in its vertical blank), else nothing
 ;     0                 end of the list: wait for the next frame
 ;
 ; Costs in T, counting the ColecoVision's wait state on every M1 fetch, and
@@ -31,6 +34,14 @@
 ; constants, and the cart keeps every list inside its frame by them):
 ;   vertical blank:  run 106 + 23n, PSG 75 + 52n, register 114, end 54
 ;   active display:  run 106 + 31n, PSG 75 + 52n, end 52
+;   with LATE_REG:   active display's register 160 (written or not), end 65
+;
+; LATE_REG is for lists that run back to back while samples play (the
+; console finds the vertical blank already past at a list's end and goes
+; straight on, so a list starts anywhere in the frame): a register that
+; must change in the vertical blank (R2, the names on screen) is put in
+; every few thousand T of such a list as a 3, and the first after the NMI
+; writes it. The SCUMM plugin builds this kernel so.
 ;
 ; VRAM: patterns $0000, colours $2000, names $1800, sprites off ($1B00 =
 ; $D0). The cart never writes slot 0 of a third, which stays all zero:
@@ -151,6 +162,10 @@ aop:            ld      a,(hl)
                 jr      z,a_run
                 dec     a
                 jr      z,a_psg
+        IFDEF LATE_REG
+                dec     a
+                jr      z,a_late
+        ENDIF
                 jp      frame                   ; 0: the list is done
 
 v_run:          ld      c,VDP_CTRL
@@ -188,6 +203,27 @@ a_psg:          ld      b,(hl)
                 ld      c,PSG
                 otir
                 jp      aop
+
+        IFDEF LATE_REG
+; 3 v r: the register once the frame has turned; 160 T either way
+a_late:         ld      a,(SEEN)                ; 14
+                ld      b,a                     ; 5
+                ld      a,(FRAMES)              ; 14
+                cp      b                       ; 5
+                jr      z,.not                  ; 8 / 13
+                ld      c,VDP_CTRL              ; 8
+                outi                            ; 18
+                outi                            ; 18
+                jp      aop                     ; 11
+.not:           inc     hl                      ; 7
+                inc     hl                      ; 7
+                nop                             ; 5 each: as long as the write
+                nop
+                nop
+                nop
+                nop
+                jp      aop                     ; 11
+        ENDIF
 
 ; ---- setup ----------------------------------------------------------------
 psg_init:       ld      a,0x9F

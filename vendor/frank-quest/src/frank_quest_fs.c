@@ -52,6 +52,38 @@ static struct CabalFile g_files[MAX_OPEN_FILES];
 #define MAX_OPEN_DIRS 4
 static struct CabalDir g_dirs[MAX_OPEN_DIRS];
 
+#if FF_USE_FASTSEEK
+// Big files read from far into (Fate of Atlantis's MONSTER.SOU, 150 MB, is
+// opened and seeked for each line of speech): FatFs's fast seek, a map of the
+// file's runs of clusters, so that a seek doesn't follow the FAT's chain from
+// the file's start (36 of its sectors for MONSTER.SOU in 32 KB clusters).
+// Made the first time a file opens and kept: the game's files aren't written.
+// Never thrown out (an open file may have it); full or too many runs: as before.
+#define CLMT_MIN_SIZE (1u << 20)
+#define CLMT_FILES 4
+#define CLMT_LEN 64
+static struct { DWORD sclust; FSIZE_t size; bool ok; DWORD tbl[CLMT_LEN]; } g_clmt[CLMT_FILES];
+
+static void map_clusters(FIL *fp) {
+    if (f_size(fp) < CLMT_MIN_SIZE || !fp->obj.sclust) return;
+    for (int i = 0; i < CLMT_FILES; i++)
+        if (g_clmt[i].sclust == fp->obj.sclust && g_clmt[i].size == f_size(fp)) {
+            if (g_clmt[i].ok) fp->cltbl = g_clmt[i].tbl;
+            return;
+        }
+    for (int i = 0; i < CLMT_FILES; i++)
+        if (!g_clmt[i].sclust) {
+            g_clmt[i].tbl[0] = CLMT_LEN;
+            fp->cltbl = g_clmt[i].tbl;
+            g_clmt[i].ok = f_lseek(fp, CREATE_LINKMAP) == FR_OK;
+            if (!g_clmt[i].ok) fp->cltbl = NULL;     // (and not tried again)
+            g_clmt[i].sclust = fp->obj.sclust;
+            g_clmt[i].size = f_size(fp);
+            return;
+        }
+}
+#endif
+
 //============================================================================
 // Initialization
 //============================================================================
@@ -183,6 +215,9 @@ CabalFile *cabal_file_open(const char *path) {
         }
         return NULL;
     }
+#if FF_USE_FASTSEEK
+    map_clusters(&file->fil);
+#endif
 
     file->valid = true;
     return file;

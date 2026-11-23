@@ -40,7 +40,29 @@ On the save and load screen:
 
 - The TV shows 256 by 192 pixels of the game's 320 by 200. The view follows the pointer.
 - The verbs and inventory at the bottom have a view of their own, so they stay on screen when the room scrolls. When a game uses the whole screen for the room, as Fate of Atlantis does at the start, the plugin uses one view.
-- Music and sound play on the console's sound chip.
+- Music and sound play on the console's sound chip. In Fate of Atlantis and Monkey Island 2 it plays the AdLib music, three notes and a drum at a time.
+- Fate of Atlantis's speech plays on the sound chip when the music plays on a computer over MIDI (below). Without MIDI the game shows the lines as text.
+
+## Game files
+
+Put all of a game's files together in one folder. These are the games we've tried, and the file to pick in the menu for each:
+
+| Game | File |
+|---|---|
+| The Secret of Monkey Island | `000.LFL` |
+| Monkey Island 2: LeChuck's Revenge | `MONKEY2.000` |
+| Indiana Jones and the Fate of Atlantis | `ATLANTIS.000` |
+
+Fate of Atlantis's speech is in `MONSTER.SOU`, which only the CD version has.
+
+## Music and speech
+
+| On the cart's USB-C port | Music | Fate of Atlantis's speech |
+|---|---|---|
+| Nothing, or a hub with a keyboard or mouse | the ColecoVision's sound chip | shown as text |
+| A computer running Parrot Cart MIDI | the computer, as MT-32 music | the ColecoVision's sound chip |
+
+The USB-C port does one job at a time. While a computer takes the music, you can't use a keyboard or mouse.
 
 ## Hear the MT-32 music on your computer
 
@@ -62,9 +84,9 @@ On a Mac with Apple silicon, macOS asks whether to allow the accessory to connec
 
 If you have a real MT-32 or CM-32L, connect it to the computer with a USB MIDI cable. In Parrot Cart MIDI, choose the cable under **Play on**. The program sends the music straight to it, so you don't need ROMs.
 
-Older versions of this plugin call the cart "MovieCart MIDI". Parrot Cart MIDI finds the cart by either name.
+On the computer the cart is called "MovieCart MIDI", its old name. Parrot Cart MIDI finds it by that name, or by "Parrot Cart MIDI".
 
-With nothing plugged into the cart's USB-C port, the music plays on the ColecoVision's sound chip.
+With MIDI playing, Fate of Atlantis's speech plays on the ColecoVision, about a fifth of a second after its text shows.
 
 ## Credits
 
@@ -75,15 +97,22 @@ With nothing plugged into the cart's USB-C port, the music plays on the ColecoVi
 - TinyUSB by Ha Thach, under the MIT license. The source is at https://github.com/hathach/tinyusb
 - The plugin itself is by Parrot Cart. Its full source is linked next to its download.
 
+## Changes since 0.2.9
+
+- Fate of Atlantis and Monkey Island 2 play their music on the ColecoVision's sound chip. Before, they were silent without MIDI.
+- With the music going to a computer over MIDI, Fate of Atlantis's speech plays on the ColecoVision.
+- In Fate of Atlantis and Monkey Island 2, notes no longer go missing when the game is busy.
+- The cart reads speech from the card faster.
+- A USB keyboard or mouse works through more kinds of hub, whether you plug it in before you start or while you play.
+- The USB code is the SDK's TinyUSB 0.21, in place of the pico-sdk's 0.18.
+- A new icon.
+
 ## Build it yourself
 
 You need the Raspberry Pi Pico SDK 2.1.1, an Arm GNU toolchain, CMake,
 Ninja, Python 3, sjasmplus and picotool. Releases are built with the Arm
 GNU Toolchain 9-2019-q4 (GCC 9.2.1) and picotool 2.3.1. With those you get
 the same file, byte for byte.
-
-This plugin uses the copy of TinyUSB that comes with the pico-sdk. Run
-`git submodule update --init lib/tinyusb` in your pico-sdk folder first.
 
 ```sh
 cmake -B build -G Ninja -DPICO_SDK_PATH=$HOME/pico-sdk
@@ -96,7 +125,8 @@ On Ubuntu, `tools/ci/setup.sh` installs the same tools that GitHub uses to
 build each release.
 
 `CART-README.md` is the text the cart shows on the plugin's page. It is
-the start of this README, with a shorter MIDI section.
+this README without the game files, the music and speech table and the
+list of changes, and with a shorter MIDI section.
 
 ## License
 

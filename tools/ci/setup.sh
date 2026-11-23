@@ -7,7 +7,6 @@ PICO_SDK_COMMIT=bddd20f928ce76142793bef434d4f75f4af6e433    # pico-sdk 2.1.1
 PICOTOOL_COMMIT=2041936441b48a3cc53ae3da9e805229fe8f4e18    # picotool 2.3.1
 PICOTOOL_SDK_COMMIT=079c6f39023649b154152db30f1d781e884879bc  # pico-sdk 2.3.1, only to build picotool
 SJASMPLUS_COMMIT=69569f353fd1de38a6fb474ce9d543d87566f75a   # sjasmplus v1.23.1.1
-TINYUSB_COMMIT=86ad6e56c1700e85f1c5678607a762cfe3aa2f47    # the TinyUSB pico-sdk 2.1.1 pins (0.18)
 # The compiler the cart's plugins are built and tested with: Arm GNU
 # Toolchain 9-2019-q4-major (GCC 9.2.1). Ubuntu's own is newer, and makes
 # a different .CVP.
@@ -34,10 +33,6 @@ fetch() {
 }
 
 fetch https://github.com/raspberrypi/pico-sdk "$HOME/pico-sdk" "$PICO_SDK_COMMIT"
-
-# this plugin's USB is the pico-sdk's own TinyUSB, a submodule that the
-# fetch above leaves out
-fetch https://github.com/hathach/tinyusb "$HOME/pico-sdk/lib/tinyusb" "$TINYUSB_COMMIT"
 
 # picotool 2.3.1, installed where CMake finds it (left to itself, pico-sdk
 # 2.1.1 builds picotool's moving `develop` branch). Each plugin build runs its

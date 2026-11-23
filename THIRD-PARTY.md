@@ -11,13 +11,13 @@ The plugin's own code, in `src/`, is under the GNU GPL, version 3
 | `vendor/frank-quest/src/fatfs/` | FatFs by ChaN | its BSD-style license (in `ff.c` and `ff.h`) |
 | `vendor/frank-quest/drivers/dlmalloc.c` | Doug Lea's malloc | public domain (CC0) |
 | `vendor/frank-quest/drivers/usbhid/` | frank-quest's USB HID host code | GPL-2.0-or-later |
-| `sdk/firmware/revc/midihello/tinyusb_fix/hub.c` | TinyUSB 0.18's hub driver with one fix | MIT (its header) |
+| `sdk/firmware/revc/sdk/tinyusb/` | [TinyUSB](https://github.com/hathach/tinyusb) (Ha Thach and contributors), with the cart's fixes, listed in its `VENDORED.md` | MIT (`sdk/firmware/revc/sdk/tinyusb/LICENSE`) |
 | `cmake/pico_sdk_import.cmake` | from the [Raspberry Pi Pico SDK](https://github.com/raspberrypi/pico-sdk) | BSD 3-Clause |
 
 `vendor/frank-quest-sources.txt` lists the engine's files that the plugin
 compiles.
 
 The built plugin also contains the Raspberry Pi Pico SDK's runtime (BSD
-3-Clause) and the pico-sdk's own TinyUSB 0.18 (MIT).
+3-Clause) and TinyUSB (MIT).
 
 The 8x8 screen font's letter shapes come from the 1982 arcade game Mr. Do!

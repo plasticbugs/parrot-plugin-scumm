@@ -227,9 +227,29 @@ int nescv_check_index(const nescv_t *e) {
 #define C_PSG_BYTE 52
 #define C_REG      114
 #define C_END_VB   54
+#ifdef NESCV_PCM
+#define C_END      65       // gbkernel built with LATE_REG: its end of list is two instructions on
+#else
 #define C_END      52
+#endif
 #define VB_LIMIT   (VBLANK_T - 600)
 #define LIST_LIMIT (FRAME_T - 1200)
+#ifdef NESCV_PCM
+// Lists with samples (nescv_tv_frame_pcm, ../starwars/swcv.c's): the kernel
+// from one list's end to the next one's first command when it doesn't wait
+// (C_FRAME, measured on MAME's console by Star Wars' test/console.sh);
+// LATE_REG's 3 in the active display part; the time from each sample's
+// command to the next's, to the 1/256 T.
+#define C_FRAME    357
+#define C_LATE     160
+#define PCM_FIRST  C_FRAME
+#define C_SAMPLE(nb) (C_PSG + (nb) * C_PSG_BYTE)
+#define PCM_STEP(nb)   ((((uint32_t)NESCV_PCM_TN(nb) - PCM_FIRST - C_SAMPLE(nb) - C_END) << 8) / (NESCV_PCM_N - 1))
+#define TURN_EVERY 8        // samples between a flip's 3s: 4,800 T, a third of the vertical blank
+// the list after the short one may start this much later than one that
+// waited (the short one's longest, from a start just before an NMI)
+#define LATE_START 1400
+#endif
 
 typedef struct {
     uint8_t *b;
@@ -484,6 +504,10 @@ NESCV_HOT static void start(nescv_t *e) {
     const uint8_t *front = e->vram_names[e->front];
     for (int i = 0; i < NESCV_CELLS; i++) busy[i >> 8][front[i]] = true;
     e->up_head = e->up_tail = 0;
+#ifdef NESCV_PCM
+    e->up_off = 0;
+    e->names_at = 0;
+#endif
     for (int i = 0; i < NESCV_CELLS; i++) {
         int t = i >> 8;                        // 8 rows of 32: 256 cells a third
         const uint8_t *cell = e->latest[i];
@@ -550,6 +574,10 @@ NESCV_HOT static void start(nescv_t *e) {
         else if (!mixed[t][s] && KEYCMP(e->latest[i], e->latest[first[t][s]])) mixed[t][s] = true;
     }
     e->up_head = e->up_tail = 0;
+#ifdef NESCV_PCM
+    e->up_off = 0;
+    e->names_at = 0;
+#endif
     // the cells in a slot already
     int misses = 0;
     memset(bucket, 0, sizeof bucket);
@@ -725,6 +753,9 @@ NESCV_HOT static void work(nescv_t *e, list_t *l) {
         l_run(l, COLOURS + at, cell + 8, 8);
         memcpy(e->pat[u->third][u->slot], cell, 16);
         e->up_head++;
+#ifdef NESCV_PCM
+        e->up_off = 0;
+#endif
         e->stats.uploads++;
     }
     // the names, into the table not on screen
@@ -834,6 +865,30 @@ bool nescv_prepare(nescv_t *e) {
 NESCV_HOT size_t nescv_tv_frame(nescv_t *e, const uint8_t *psg, int npsg, uint8_t *out) {
     e->now++;
     list_t l = {.b = out, .n = 0, .t = C_START, .vblank = true};
+#ifdef NESCV_PCM
+    if (e->turn_due) {                       // the flip the last list made with LATE_REG's 3s, first
+        flip(e, &l);
+        e->turn_due = false;
+    }
+    if (e->astray) {
+        // the list after samples starts anywhere in the frame: the sound
+        // alone, and it's over before the next vertical blank begins, or
+        // just after (and the next list starts in it)
+        e->astray = false;
+        e->resync = true;
+        if (npsg > 0) l_psg(&l, psg, npsg);
+        l_end_vblank(&l);
+        l.t += C_END;
+        l.b[l.n++] = 0;
+        e->stats.tv_frames++;
+        e->stats.t_used += l.t;
+        return l.n;
+    }
+    if (e->resync) {                         // in the vertical blank, but as late as that short list was long
+        e->resync = false;
+        l.t += LATE_START;
+    }
+#endif
     if (e->vram_r7 < 0) {                    // the first list: the border
         l_reg(&l, 7, e->backdrop);
         e->vram_r7 = e->backdrop;
@@ -867,6 +922,323 @@ NESCV_HOT size_t nescv_tv_frame(nescv_t *e, const uint8_t *psg, int npsg, uint8_
     if (l.t > e->stats.t_max) e->stats.t_max = l.t;
     return l.n;
 }
+
+#ifdef NESCV_PCM
+// ---- lists with samples ------------------------------------------------------------
+// VRAM as the lists so far leave it, where nescv keeps it: the patterns, the
+// colours and both name tables (the sprites' tables are the caller's)
+static uint16_t kept_end(uint16_t a) {
+    if (a < 0x1800) return 0x1800;
+    if (a < 0x1B00) return 0x1B00;
+    if (a >= 0x1C00 && a < 0x1F00) return 0x1F00;
+    if (a >= 0x2000 && a < 0x3800) return 0x3800;
+    return a;
+}
+
+static uint8_t *kept(nescv_t *e, uint16_t a) {
+    if (a < 0x1800) return &e->pat[a >> 11][(a >> 3) & 255][a & 7];
+    if (a < 0x1B00) return &e->vram_names[0][a - 0x1800];
+    if (a < 0x2000) return &e->vram_names[1][a - 0x1C00];
+    a = (uint16_t)(a - 0x2000);
+    return &e->pat[a >> 11][(a >> 3) & 255][8 + (a & 7)];
+}
+
+// the runs that only take up time go round VRAM, rewriting it as it is
+// (which also mends a write the VDP lost): the patterns, the colours, the
+// two name tables, as one stretch of 13,824 bytes
+static uint16_t pad_addr(uint16_t at) {
+    if (at < 6144) return at;
+    if (at < 12288) return (uint16_t)(0x2000 + at - 6144);
+    if (at < 13056) return (uint16_t)(0x1800 + at - 12288);
+    return (uint16_t)(0x1C00 + at - 13056);
+}
+
+enum { P_PAD, P_EXTRA, P_UPLOAD, P_NAMES };
+typedef struct {
+    uint8_t kind;
+    uint16_t a, n;          // the VRAM address, the bytes there are (P_NAMES, P_PAD: as many as wanted, to `room`)
+    const uint8_t *d;       // the bytes (P_PAD: VRAM as it is)
+    uint16_t room;          // bytes the run may go on with after them, VRAM as it is (P_NAMES: names wanted)
+} piece_t;
+
+// the next thing for the console: the caller's writes, then the picture's
+// cells and its names (none while a flip waits for the frame to turn), else
+// VRAM rewritten as it is. A cell takes two slots (its patterns, then its
+// colours): none begun in a list's last (new_cell false), so that no list
+// ends with one half sent, on screen in a slot taken from a cell showing
+static void peek(nescv_t *e, bool turning, bool new_cell, piece_t *p) {
+    while (e->x_at < e->extra_n && e->extra[e->x_at] == 3) e->x_at = (uint16_t)(e->x_at + 3);
+    if (e->x_at < e->extra_n) {
+        const uint8_t *b = e->extra + e->x_at;
+        p->kind = P_EXTRA;
+        p->a = (uint16_t)((b[1] | (b[2] & 0x3F) << 8) + e->x_off);
+        p->n = (uint16_t)(b[3] - e->x_off);
+        p->d = b + 4 + e->x_off;
+        p->room = 0;
+        return;
+    }
+    if (!turning && e->has_target) {
+        if (e->up_head != e->up_tail && (e->up_off || new_cell)) {
+            const nescv_upload_t *u = &e->uploads[e->up_head];
+            const int off = e->up_off;
+            p->kind = P_UPLOAD;
+            p->a = (uint16_t)((off < 8 ? PATTERNS : COLOURS) + u->third * 0x800 + u->slot * 8 + (off & 7));
+            p->n = (uint16_t)(8 - (off & 7));
+            p->d = e->latest[u->cell] + off;
+            p->room = (uint16_t)(kept_end(p->a) - p->a - p->n);
+            return;
+        }
+        const uint8_t *back = e->vram_names[!e->front], *want = e->target_names;
+        int i = e->up_head != e->up_tail ? NESCV_CELLS : e->names_at;   // (the names once the cells are in)
+        while (i < NESCV_CELLS && back[i] == want[i]) i++;
+        if (e->up_head == e->up_tail) e->names_at = (uint16_t)i;
+        if (i < NESCV_CELLS) {
+            p->kind = P_NAMES;
+            p->a = (uint16_t)(NAMES[!e->front] + i);
+            p->n = 0;
+            p->d = want + i;
+            p->room = (uint16_t)(NESCV_CELLS - i);
+            return;
+        }
+    }
+    uint16_t a = pad_addr(e->pad_at);
+    p->kind = P_PAD;
+    p->a = a;
+    p->n = 0;
+    p->d = NULL;
+    p->room = (uint16_t)(kept_end(a) - a);
+}
+
+typedef struct {
+    piece_t p;
+    int len, ext;           // the piece's bytes in this run, then VRAM as it is after them
+    int pad;                // a second run, VRAM as it is (0: none)
+    int left;               // T to the next sample over
+} slot_t;
+
+// the runs that take a slot's T: the next piece, cut to fit or carried on
+// over VRAM as it is; then, with time for one, a run rewriting VRAM as it
+// is. Picked from three, by how close they bring the next sample to its time
+static void plan(const piece_t *p, int budget, slot_t *s) {
+    s->p = *p;
+    s->len = s->ext = s->pad = 0;
+    s->left = budget;
+    if (budget < C_RUN_ACT + C_BYTE_ACT) return;
+    int most = (budget - C_RUN_ACT) / C_BYTE_ACT;
+    if (most > 255) most = 255;
+    if (p->kind == P_PAD) {
+        s->len = most;                       // (pad_run goes on in the next table if this one ends)
+    } else if (p->kind == P_NAMES) {
+        s->len = most < p->room ? most : p->room;
+    } else {
+        s->len = most < p->n ? most : p->n;
+        if (s->len == p->n) s->ext = most - s->len < p->room ? most - s->len : p->room;
+    }
+    int rest = budget - C_RUN_ACT - C_BYTE_ACT * (s->len + s->ext);
+    if (rest >= C_RUN_ACT + C_BYTE_ACT && p->kind != P_PAD) {
+        s->pad = (rest - C_RUN_ACT) / C_BYTE_ACT;
+        if (s->pad > 255) s->pad = 255;
+        rest -= C_RUN_ACT + C_BYTE_ACT * s->pad;
+    }
+    s->left = rest;
+}
+
+// how good a slot's plan is (less is better): T to the next sample's time,
+// and 20 more for a cell's half cut short (taking two slots more, so the
+// picture's cells going in at half the rate)
+static int score(const slot_t *s) {
+    return s->left + (s->p.kind == P_UPLOAD && s->len < s->p.n ? 20 : 0);
+}
+
+static void put_byte_run(list_t *l, uint16_t a, int n) {
+    l->t += C_RUN_ACT + (uint32_t)n * C_BYTE_ACT;
+    l->b[l->n++] = 1;
+    l->b[l->n++] = (uint8_t)a;
+    l->b[l->n++] = (uint8_t)((a >> 8) & 0x3F) | 0x40;
+    l->b[l->n++] = (uint8_t)n;
+}
+
+// a run rewriting n bytes of VRAM as it is, from the pad's place on
+static void pad_run(nescv_t *e, list_t *l, int n) {
+    uint16_t a = pad_addr(e->pad_at);
+    if (kept_end(a) - a < n) {               // to the end of that table, and on from the next
+        e->pad_at = (uint16_t)(e->pad_at + (kept_end(a) - a));
+        if (e->pad_at >= 13824) e->pad_at = 0;
+        a = pad_addr(e->pad_at);
+    }
+    put_byte_run(l, a, n);
+    for (int j = 0; j < n; j++) l->b[l->n++] = *kept(e, (uint16_t)(a + j));
+    e->pad_at = (uint16_t)(e->pad_at + n);
+    if (e->pad_at >= 13824) e->pad_at = 0;
+    e->pcm.pad_bytes += (uint32_t)n;
+}
+
+static void do_slot(nescv_t *e, list_t *l, const slot_t *s) {
+    const piece_t *p = &s->p;
+    if (s->len + s->ext > 0) {
+        if (p->kind == P_PAD) {
+            pad_run(e, l, s->len);
+        } else {
+            put_byte_run(l, p->a, s->len + s->ext);
+            for (int j = 0; j < s->len; j++) l->b[l->n++] = p->d[j];
+            if (p->kind == P_UPLOAD || p->kind == P_NAMES)
+                for (int j = 0; j < s->len; j++) *kept(e, (uint16_t)(p->a + j)) = p->d[j];
+            for (int j = 0; j < s->ext; j++) l->b[l->n++] = *kept(e, (uint16_t)(p->a + s->len + j));
+            e->pcm.picture_bytes += (uint32_t)s->len;
+            e->pcm.pad_bytes += (uint32_t)s->ext;
+            if (p->kind == P_EXTRA) {
+                e->x_off = (uint16_t)(e->x_off + s->len);
+                if (e->x_off == e->extra[e->x_at + 3]) {
+                    e->x_at = (uint16_t)(e->x_at + 4 + e->extra[e->x_at + 3]);
+                    e->x_off = 0;
+                }
+            } else if (p->kind == P_UPLOAD) {
+                e->up_off = (uint8_t)(e->up_off + s->len);
+                if (e->up_off == 16) {
+                    e->up_head++;
+                    e->up_off = 0;
+                    e->stats.uploads++;
+                }
+            } else {
+                e->names_at = (uint16_t)(e->names_at + s->len);
+                e->stats.name_bytes += (uint32_t)s->len;
+            }
+        }
+    }
+    if (s->pad) pad_run(e, l, s->pad);
+}
+
+static void l_late(list_t *l, uint8_t r, uint8_t v) {
+    l->t += C_LATE;
+    l->b[l->n++] = 3;
+    l->b[l->n++] = v;
+    l->b[l->n++] = 0x80 | r;
+}
+
+NESCV_HOT size_t nescv_tv_frame_pcm(nescv_t *e, const uint8_t *psg, int npsg, const uint8_t *pcm, int nb, uint8_t *out) {
+    if (!pcm) return nescv_tv_frame(e, psg, npsg, out);
+    const uint32_t step = PCM_STEP(nb);
+    e->now++;
+    list_t l = {.b = out, .n = 0, .t = PCM_FIRST, .vblank = true};
+    // A flip: the one the last list made with 3s, now for sure; or, when the
+    // console was in step with the vertical blank, as a plain list does it
+    // (its registers made now, put in after the first sample)
+    uint8_t fb[8];
+    list_t fl = {.b = fb, .n = 0, .t = 0, .vblank = true};
+    bool flipped = false;
+    if (e->turn_due || (!e->astray && target_done(e))) {
+        e->turn_due = false;
+        flip(e, &fl);
+        flipped = true;
+    }
+    if (!e->has_target && e->has_latest) {
+        e->has_latest = false;
+        if (e->latest_index > e->shown_index) start(e);
+    }
+    // the picture all in at the start, the flip not yet made: it goes in as
+    // 3s, the first after the NMI writing it (and the next list's start)
+    const bool turning = !flipped && target_done(e);
+    const uint8_t r2 = (uint8_t)(6 + !e->front);
+    const bool r7 = turning && e->vram_r7 != e->target_backdrop;
+    e->x_at = e->x_off = 0;
+    int tone_at = 0;
+    for (int k = 0; k < NESCV_PCM_N; k++) {
+        uint8_t b[24];                       // a sample, tone bytes, repeats; at the end what is left of 16 tone bytes
+        int n = 0;
+        const uint8_t *smp = pcm + k * nb;
+        for (int i = 0; i < nb; i++) b[n++] = smp[i];
+        // what goes in this slot besides the runs
+        int fixed = 0;
+        if (k == 0) {
+            fixed += (int)fl.t;
+            if (e->vram_r7 < 0) fixed += C_REG;
+            for (int i = 0; i < e->extra_n;) {
+                if (e->extra[i] == 3) { fixed += C_REG; i += 3; }
+                else i += 4 + e->extra[i + 3];
+            }
+            fixed += C_END_VB;
+        }
+        const bool late = turning && (k % TURN_EVERY == 0 || k == NESCV_PCM_N - 2);
+        if (late) fixed += C_LATE * (r7 ? 2 : 1);
+        uint32_t until = k + 1 < NESCV_PCM_N ? PCM_FIRST + (((uint32_t)(k + 1) * step) >> 8) : 0;
+        // the tones' bytes, a register or two with a sample while there's
+        // time and a run's left (a slot without one can't be timed closer
+        // than a repeat's 52 T: the next slot has room)
+        while (tone_at < npsg && n < nb + 3) {
+            int g = 1;
+            while (tone_at + g < npsg && !(psg[tone_at + g] & 0x80)) g++;
+            if (n + g > nb + 4) break;
+            if (until && (int)until - (int)l.t - C_PSG - C_PSG_BYTE * (n + g) - fixed < C_RUN_ACT + C_BYTE_ACT) break;
+            memcpy(b + n, psg + tone_at, (size_t)g);
+            n += g;
+            tone_at += g;
+        }
+        if (k + 1 == NESCV_PCM_N) {          // the last: then the list's end
+            if (tone_at < npsg) {            // (never, as a rule: what's left of the tones)
+                memcpy(b + n, psg + tone_at, (size_t)(npsg - tone_at));
+                n += npsg - tone_at;
+            }
+            l_psg(&l, b, n);
+            break;
+        }
+        // the slot's runs, with none, one or two of the sample's second byte
+        // again (52 T each: its level unchanged) to bring the next sample
+        // closest to its time
+        int budget = (int)until - (int)l.t - C_PSG - C_PSG_BYTE * n - fixed;
+        piece_t p;
+        peek(e, turning, k + 2 < NESCV_PCM_N, &p);
+        slot_t best, s;
+        int reps = 0;
+        plan(&p, budget, &best);
+        for (int r = 1; r <= 2; r++) {
+            if (budget - C_PSG_BYTE * r < 0) break;
+            plan(&p, budget - C_PSG_BYTE * r, &s);
+            if (score(&s) < score(&best)) { best = s; reps = r; }
+        }
+        while (reps--) b[n++] = smp[nb - 1];
+        l_psg(&l, b, n);
+        if (k == 0) {
+            if (e->vram_r7 < 0) {
+                l_reg(&l, 7, e->backdrop);
+                e->vram_r7 = e->backdrop;
+            }
+            for (int i = 0; i < e->extra_n;) {   // the caller's registers: at the start, wherever the frame is
+                if (e->extra[i] == 3) { memcpy(l.b + l.n, e->extra + i, 3); l.n += 3; l.t += C_REG; i += 3; }
+                else i += 4 + e->extra[i + 3];
+            }
+            memcpy(l.b + l.n, fb, fl.n);
+            l.n += fl.n;
+            l.t += fl.t;
+            l_end_vblank(&l);
+        }
+        if (late) {
+            l_late(&l, 2, r2);
+            if (r7) l_late(&l, 7, e->target_backdrop);
+        }
+        do_slot(e, &l, &best);
+        if (best.left < 0) e->pcm.over++;
+        else if ((uint32_t)best.left > e->pcm.slack_max) e->pcm.slack_max = (uint32_t)best.left;
+    }
+    if (turning) {
+        e->turn_due = true;
+        e->pcm.turns++;
+    }
+    e->astray = true;
+    e->resync = false;
+    e->extra_n = 0;
+    e->extra_t = 0;
+    e->x_at = e->x_off = 0;
+    l.t += C_END;
+    l.b[l.n++] = 0;
+    e->stats.tv_frames++;
+    e->stats.t_used += l.t;
+    if (l.t > e->stats.t_max) e->stats.t_max = l.t;
+    e->pcm.lists++;
+    if (!e->pcm.t_min || l.t < e->pcm.t_min) e->pcm.t_min = l.t;
+    if (l.t > e->pcm.t_max) e->pcm.t_max = l.t;
+    return l.n;
+}
+#endif
 
 // ---- the sound -------------------------------------------------------------------
 

@@ -1,5 +1,9 @@
-The first release.
+Changes since 0.2.9:
 
-- The verbs get their own view only in games that have a verb area. Games without one, such as Indiana Jones and the Fate of Atlantis in its opening, show the whole screen as one view.
-- Keypad 1 shows the whole screen as one view. Press it again to give the verbs their own view.
-- The cart now reads the console's address lines twice, and answers only when the two agree. This is the bus loop that fixed the glitches in The Empire Strikes Back 0.1.4.
+- Fate of Atlantis and Monkey Island 2 play their music on the ColecoVision's sound chip. Before, they were silent without MIDI.
+- With the music going to a computer over MIDI, Fate of Atlantis's speech plays on the ColecoVision.
+- In Fate of Atlantis and Monkey Island 2, notes no longer go missing when the game is busy.
+- The cart reads speech from the card faster.
+- A USB keyboard or mouse works through more kinds of hub, whether you plug it in before you start or while you play.
+- The USB code is the SDK's TinyUSB 0.21, in place of the pico-sdk's 0.18.
+- A new icon.

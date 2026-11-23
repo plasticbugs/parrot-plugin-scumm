@@ -147,7 +147,12 @@ OPL *Config::create(OplType type) {
 	return create(kAuto, type);
 }
 
+OPL *(*g_movieCartOPL)(Config::OplType type) = 0; // MovieCart
+
 OPL *Config::create(DriverId driver, OplType type) {
+	if (g_movieCartOPL) // MovieCart
+		return g_movieCartOPL(type);
+
 	// On invalid driver selection, we try to do some fallback detection
 	if (driver == -1) {
 		warning("Invalid OPL driver selected, trying to detect a fallback emulator");

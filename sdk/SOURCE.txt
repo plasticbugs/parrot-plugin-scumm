@@ -1,4 +1,4 @@
-commit 94ab2d7c52d229dadcbc428db15c222c2a7d1a48
-date   2026-11-18T12:25:13-08:00
-about  Every frame plugin on cvfserve.S, the two-sample bus loop
-copied 2026-11-18 by tools/update-sdk.sh
+commit 40c65db0a364cb742a5841ba8dc321d3e7f8fb5b
+date   2026-11-22T19:14:58-08:00
+about  SCUMM 0.2.14: new icon
+copied 2026-11-22 by tools/update-sdk.sh

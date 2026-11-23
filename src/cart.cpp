@@ -3,7 +3,10 @@
 // ScummVM's SCUMM engine (vendor/frank-quest) and sends the console what it
 // shows and plays: each picture through scummcv (the colours, a 256 x 192
 // window at 1:1) and nescv (cells and the Game Boy kernel's lists), the
-// PCjr music and sound as SN76489 bytes in the same lists.
+// music and sound as SN76489 bytes in the same lists (psgmix: the PCjr's and
+// the Game Blaster's in MI1, the AdLib's in v5 games such as Fate of Atlantis),
+// and the speech (Fate of Atlantis's MONSTER.SOU) as samples in them
+// (speechdac: the PSG's three tones as a DAC, 5,962 samples a second).
 //
 //   core 1  serves the kernel and a list a TV frame (cvframes.c)
 //   core 0  the engine, on a stack of its own; every call it makes to the
@@ -24,8 +27,9 @@
 //
 // The USB port: plugged into a computer, the cart is its MIDI device,
 // "MovieCart MIDI", and the game's MT-32 music goes there as MIDI (for Munt,
-// say; ../mac/cvmidi.c routes it); the console's PSG plays none. Otherwise
-// (a hub, or nothing) it's a host for a USB keyboard and mouse.
+// say; ../mac/cvmidi.c routes it); the console's PSG plays none of it, only
+// the speech. Otherwise (a hub, or nothing) it's a host for a USB keyboard
+// and mouse, the music on the PSG and no speech (SPEECH_WITHOUT_MIDI).
 #include <cstdio>
 #include <cstdlib>
 #include <cctype>
@@ -33,6 +37,7 @@
 
 #include "pico/stdlib.h"
 #include "hardware/watchdog.h"
+#include "hardware/sync.h"
 
 extern "C" {
 #include "cvframes.h"
@@ -43,6 +48,8 @@ extern "C" {
 #include "nescv.h"
 #include "scummcv.h"
 #include "psgmix.h"
+#include "speechdac.h"
+#include "psgq.h"
 #include "savemenu.h"
 #include "usbinput.h"
 #include "usbmidi_dev.h"
@@ -51,7 +58,7 @@ bool cvsd_card_in(void);
 void heap_init(void);
 uint32_t heap_used(void);
 }
-#include "gbkernel.h"
+#include "scummkernel.h"   // gbkernel.asm built with LATE_REG (CMakeLists.txt): nescv's lists with samples need it
 #include "handoff.h"
 #include "scummconf.h"
 
@@ -82,7 +89,7 @@ namespace Scumm { extern Common::Rect g_movieCartMsgRect; }   // string.cpp (Mov
 
 #define OPEN_US      20000          // serve the console this long before the card's (blocking) start
 #define WATCHDOG_MS  8000           // a hang reboots into the menu (a room's files load in well under)
-#define MIX_RATE     11025          // the mixer runs (Player_V2 plays in it) and its output is dropped
+#define MIX_RATE     11025          // the mixer runs (Player_V2 and the AdLib driver's timer run in it); its output goes to speechdac
 #define STACK_BYTES  (128 * 1024)   // the engine's: 19 KB on the Mac (test/run.sh); the menu note's "s..K" says the cart's
 #define STACK_GUARD  1024           // MSPLIM this far above its bottom: an overflow faults (cvdiag.h) with room to report it
 #define HOLD_US      1000000        // keypad 7 / 9 held this long: save / load
@@ -101,6 +108,29 @@ namespace Scumm { extern Common::Rect g_movieCartMsgRect; }   // string.cpp (Mov
 #define MIDI_WAIT_US 1500000        // a computer on the USB port configures the MIDI device in this (macOS: ~0.3 s)
 #define MIDI_ASK_US  700000         // a computer there, the device not taken yet: it's asking its user (the TV says so)
 #define MIDI_ALLOW_US 60000000      // and that user has this long to allow it (or fire goes on without)
+// The speech on the PSG without a computer's MIDI too (the music then drops
+// to one tone and the noise while someone talks, the DAC two tones). 0 (as
+// built): only with MIDI, where the PSG has nothing else to play and all
+// three tones are the DAC. CMake: -DSCUMM_SPEECH_WITHOUT_MIDI=ON.
+#ifndef SPEECH_WITHOUT_MIDI
+#define SPEECH_WITHOUT_MIDI 0
+#endif
+// The speech plays this far behind the mixer (speechdac.h), so that the
+// lists go on through the engine's longest stretches without a call to the
+// OSystem (95 ms seen in Fate of Atlantis): tick() builds them then, from
+// a timer's interrupt. It is heard this much after its subtitle shows.
+#define SPEECH_LEAD_MS 200
+#define TICK_US      1000           // tick() looks at the console this often
+#define TICK_LATE_US 5000           // and builds a TV frame's list the engine hasn't come to this long after it began
+// The PSG's music from the AdLib driver (v5 games) without MIDI: psgmix is
+// called in the mixer's time, at the end of each TV frame's samples, and the
+// lists play it this far behind (psgq.h), tick() too while the engine is
+// away. 0: as 0.2.10, psgmix at each list (the music holds while the cart is
+// late, then jumps). Not with SPEECH_WITHOUT_MIDI.
+#ifndef MUSIC_LEAD_MS
+#define MUSIC_LEAD_MS 150
+#endif
+#define TV_FRAME_T   59736          // the console's TV frame, in its T
 
 // ---- the console, a list a TV frame (as ../../nes/plugin/nes.cpp) ------------------
 
@@ -118,12 +148,50 @@ static scummcv_view_t pic_views[16];
 static char game_name[33], note[33];
 static bool xip_quad;                   // cvxip_fast() switched the flash to quad reads
 static bool usb_midi;                   // the USB port is a MIDI device, a computer on it (usbmidi_dev.h)
+// the speech: the mixer's output to samples, the next list's, and whether
+// the last list published had them (the console running it twice is late)
+static sdac_t dac;
+static uint8_t pcm_bytes[SDAC_N * SDAC_MAX_B];
+static bool last_pcm;
+static uint32_t late_pcm;               // speech lists the console ran twice (the menu's note: L)
+static uint32_t tick_lists;             // lists tick() built, the engine away
+static uint32_t held_frames;            // TV frames the console ran a list again: the music held (m)
+// the music without MIDI in the mixer's time (MUSIC_LEAD_MS): on once the
+// AdLib driver opens psgmix's OPL; TV frames of the mixer's samples since
+static psgq_t mq;
+static bool mq_on;
+static uint64_t mq_base, mq_frames;
+static uint64_t mq_end(uint64_t f) { return mq_base + (f * TV_FRAME_T * MIX_RATE + 3579544) / 3579545; }
+// the mixer (service()): when it began, and its samples made; due by now
+static uint64_t mix_start, mix_made;
+static uint32_t mix_owed(void) {
+    if (!mix_start) return 0;
+    const uint64_t due = (time_us_64() - mix_start) * MIX_RATE / 1000000;
+    return due > mix_made ? (uint32_t)MIN<uint64_t>(due - mix_made, 1u << 20) : 0;
+}
+// core 0's own code in what tick() touches (the lists, the picture's
+// encoder, the voice's samples): tick() leaves them alone meanwhile
+static volatile int busy_lists;
+struct ListsBusy {
+    ListsBusy() { busy_lists = busy_lists + 1; __asm volatile("" ::: "memory"); }
+    ~ListsBusy() { __asm volatile("" ::: "memory"); busy_lists = busy_lists - 1; }
+};
 
 static void publish(void) {
     if (list_pending && cvf_publish(list, list_len)) list_pending = false;
 }
 
+static void count_late(uint32_t f) {
+    if (seen_frames) held_frames += f - seen_frames - 1;
+    if (last_pcm && f - seen_frames > 1) {   // the console ran the last list again: its samples twice
+        late_pcm += f - seen_frames - 1;
+        sdac_late(&dac, (int)(f - seen_frames - 1));
+    }
+    seen_frames = f;
+}
+
 static bool new_frame(void) {
+    ListsBusy b;
     uint32_t t = time_us_32();
     cvf_task(t);
     watchdog_update();
@@ -131,20 +199,66 @@ static bool new_frame(void) {
     if (list_pending) return false;
     uint32_t f = cvf_frames();
     if (f == seen_frames) return false;
-    seen_frames = f;
+    count_late(f);
     return true;
 }
 
 // ---- the sound: psgmix (../psgmix.h) turns the engine's players into PSG
-// bytes, a TV frame's at a time
+// bytes, a TV frame's at a time, and speechdac (../speechdac.h) the voice
+// into samples, a list's at a time: while it's up, psgmix leaves it tones 1
+// and 2, and nescv spreads the samples through the list
 
 static void send_frame(void) {
+    ListsBusy lb;
     uint8_t b[16];
-    int n = psgmix_frame(b);
+    const bool pcm = (usb_midi || SPEECH_WITHOUT_MIDI) && sdac_list(&dac, pcm_bytes, mix_owed());
+    psgmix_tones(!pcm ? 3 : usb_midi ? 0 : 1);
+    int n = mq_on ? psgq_pop(&mq, b) : psgmix_frame(b);
     if (pointer_hook) pointer_hook();
-    list_len = nescv_tv_frame(&enc, b, n, list);
+    list_len = nescv_tv_frame_pcm(&enc, b, n, pcm ? pcm_bytes : nullptr, dac.tones, list);
+    last_pcm = pcm;
     list_pending = true;
     publish();
+}
+
+// While the speech plays, or the music in the mixer's time, every TICK_US
+// from a timer's interrupt: a TV frame the engine hasn't come to
+// TICK_LATE_US after it began gets its list from here, the voice and the
+// music going on from what the mixer made ahead (SPEECH_LEAD_MS,
+// MUSIC_LEAD_MS), the picture's cells as they come and the pointer as it
+// was. Not while core 0's own code is in the lists (busy_lists). psgmix's
+// bytes from here only with MIDI, where it has no music to be caught halfway.
+static repeating_timer_t tick_timer;
+static bool tick_on;
+static bool tick(repeating_timer_t *) {
+    static uint32_t f_seen, t_seen;
+    if (!(last_pcm || mq_on) || busy_lists) return true;
+    publish();
+    if (list_pending) return true;
+    const uint32_t f = cvf_frames(), t = time_us_32();
+    if (f == seen_frames) return true;
+    if (f != f_seen) {
+        f_seen = f;
+        t_seen = t;
+        return true;
+    }
+    if (t - t_seen < TICK_LATE_US) return true;
+    count_late(f);
+    uint8_t b[16];
+    int n = 0;
+    const bool pcm = (usb_midi || SPEECH_WITHOUT_MIDI) && sdac_list(&dac, pcm_bytes, mix_owed());
+    if (usb_midi) {
+        psgmix_tones(pcm ? 0 : 3);
+        n = psgmix_frame(b);
+    } else if (mq_on) {
+        n = psgq_pop(&mq, b);
+    }
+    list_len = nescv_tv_frame_pcm(&enc, b, n, pcm ? pcm_bytes : nullptr, dac.tones, list);
+    last_pcm = pcm;
+    list_pending = true;
+    publish();
+    tick_lists++;
+    return true;
 }
 
 // ---- messages before (or instead of) the game: a canvas as the picture --------------
@@ -153,6 +267,7 @@ static canvas_t msg_canvas;
 static bool msg_shown, msg_waiting;
 
 static void offer_msg(void) {
+    ListsBusy lb;
     nescv_picture_t p;
     p.pixels = &msg_canvas.px[0][0];
     p.pitch = VDP_W;
@@ -464,7 +579,6 @@ private:
 	uint8_t _tms[256 * 192];
 
 	Audio::MixerImpl *_mixer = 0;
-	uint64_t _mixed = 0, _mixStart = 0;
 	int16 _mixBuf[256 * 2];
 	uint32 _timerLast = 0;
 	Common::String _saveDir;
@@ -500,6 +614,7 @@ void OSystem_Cart::offer() {
 		p.col[b] = 0;
 	}
 	p.backdrop = C_BLACK;
+	ListsBusy lb;
 	if (nescv_offer(&enc, &p, pic_index + 1)) {
 		pic_index++;
 		pic_views[pic_index & 15] = _view;
@@ -669,8 +784,12 @@ static void pointer_frame(void) { g_cart->pointer(); }
 
 // the menu's bottom line, should RESET come: how it went (pictures shown a
 // second, the heap, the longest the engine went without serving the
-// console, keyboards and mice, Q when the flash reads quad, S serial, and
-// the engine's stack at its deepest, in KB)
+// console, keyboards and mice, the engine's stack at its deepest, in KB,
+// L: speech lists the console ran twice, the cart late with the next, their
+// 100 samples heard again, and m: the music's time lost against the TV's,
+// the TV frames since the start the console ran a list again, the cart late
+// with the next, or the music in the mixer's time had none ready
+// (MUSIC_LEAD_MS), so the music held there, in percent (9: 9 % or more))
 static void update_note(uint32_t now) {
 	static uint32_t t_last, shown_last, gap_max, served;
 	if (served) gap_max = MAX(gap_max, now - served);
@@ -682,11 +801,13 @@ static void update_note(uint32_t now) {
 	char io[12];
 	if (usb_midi) snprintf(io, sizeof io, "midi%s", usbmidi_dropped() ? "!" : "");
 	else snprintf(io, sizeof io, "K%uM%u", (unsigned)MIN(kb, 9), (unsigned)MIN(mice, 9));
-	// 32 characters at most: "99/s 9.9M gap9999 K9M9 Q s999K" (gap in ms; "midi" for
-	// K and M when a computer has the port, "midi!" once a message was dropped)
-	snprintf(note, sizeof note, "%u/s %u.%uM gap%u %.5s %c s%uK", MIN(per_s, 99u), (unsigned)(heap_used() >> 20) % 10,
-	         (unsigned)(heap_used() % 1048576 / 104858) % 10, (unsigned)MIN<uint32_t>(gap_max / 1000, 9999u),
-	         io, xip_quad ? 'Q' : 'S', (unsigned)MIN<uint32_t>((cvd_stack_used() + 1023) / 1024, 999u));
+	// 32 characters at most: "99/s 9.9M g999 K9M9 s999 L99 m9" (g: the gap in ms; "midi"
+	// for K and M when a computer has the port, "midi!" once a message was dropped)
+	const uint32_t frames = cvf_frames();
+	snprintf(note, sizeof note, "%u/s %u.%uM g%u %.5s s%u L%u m%u", MIN(per_s, 99u), (unsigned)(heap_used() >> 20) % 10,
+	         (unsigned)(heap_used() % 1048576 / 104858) % 10, (unsigned)MIN<uint32_t>(gap_max / 1000, 999u),
+	         io, (unsigned)MIN<uint32_t>((cvd_stack_used() + 1023) / 1024, 999u),
+	         (unsigned)MIN<uint32_t>(late_pcm, 99u), (unsigned)MIN<uint64_t>(frames ? 100ull * (held_frames + mq.stats.empty) / frames : 0, 9u));
 	cvf_note(note);
 	t_last = now;
 	shown_last = enc.stats.shown;
@@ -696,7 +817,7 @@ static void update_note(uint32_t now) {
 void OSystem_Cart::service() {
 	// not inside itself: the mixer's channels (Channel::mix) and the timers
 	// ask getMillis(), which serves; inside, the time is all they need. (A
-	// nested service() mixed again before _mixed moved on: a recursion that
+	// nested service() mixed again before mix_made moved on: a recursion that
 	// ran the engine's 128K stack out in 25 ms, 0.1.3 and 0.1.4.)
 	if (in_service) return;
 	static bool first = true;
@@ -710,13 +831,40 @@ void OSystem_Cart::service() {
 	if (usb_midi) usbmidi_task();
 	else usbin_task();
 	if (!_menuOpen) input(now);         // the save screen reads the controller itself
-	// the mixer, at its rate (Player_V2 renders in it, and calls the tap)
-	if (!_mixStart) _mixStart = time_us_64();
-	uint64_t due = (time_us_64() - _mixStart) * MIX_RATE / 1000000;
-	while (_mixed < due) {
-		uint n = (uint)MIN<uint64_t>(due - _mixed, 256);
-		_mixer->mixCallback((byte *)_mixBuf, n * 4);
-		_mixed += n;
+	// the mixer, at its rate (Player_V2 renders in it, and calls the tap);
+	// what it makes is the speech and the digital effects alone (the
+	// AdLib's OPL is psgmix's, silent), for speechdac
+	if (!mix_start) mix_start = time_us_64();
+	uint64_t due = (time_us_64() - mix_start) * MIX_RATE / 1000000;
+	// the music without MIDI in the mixer's time, from when the AdLib driver opens psgmix's OPL
+	if (!mq_on && MUSIC_LEAD_MS && !usb_midi && !SPEECH_WITHOUT_MIDI && psgmix_opl()) {
+		psgq_init(&mq, (int)(((uint64_t)MUSIC_LEAD_MS * 3579545 / TV_FRAME_T + 500) / 1000));
+		mq_base = mix_made;
+		mq_frames = 0;
+		mq_on = true;
+		if (!tick_on) tick_on = add_repeating_timer_us(-TICK_US, tick, NULL, &tick_timer);
+	}
+	if (mix_made < due) {
+		const bool voice = _mixer->hasActiveChannelOfType(Audio::Mixer::kSpeechSoundType) ||
+		                   _mixer->hasActiveChannelOfType(Audio::Mixer::kSFXSoundType);
+		while (mix_made < due) {
+			uint n = (uint)MIN<uint64_t>(due - mix_made, 256);
+			if (mq_on) n = (uint)MIN<uint64_t>(n, mq_end(mq_frames + 1) - mix_made);
+			_mixer->mixCallback((byte *)_mixBuf, n * 4);
+			{
+				ListsBusy lb;
+				sdac_in(&dac, _mixBuf, (int)n, voice);
+			}
+			mix_made += n;
+			if (mq_on && mix_made == mq_end(mq_frames + 1)) {   // a TV frame's music
+				uint8_t b[16];
+				const int k = psgmix_frame(b);
+				const uint32_t irq = save_and_disable_interrupts();   // (tick() pops)
+				psgq_push(&mq, b, k);
+				restore_interrupts(irq);
+				mq_frames++;
+			}
+		}
 	}
 	// the engine's timers (iMUSE and the like): every millisecond at most
 	if (now - _timerLast >= 1000) {
@@ -986,7 +1134,9 @@ static void __attribute__((noreturn)) run_engine(void) {
 	scummconf_setup("cart", game_dir.c_str(), usb_midi ? "cvmidi_mt32" : "pcjr");   // as the Mac test's (../scummconf.h)
 	if (usb_midi) ConfMan.set("mt32_device", "cvmidi_mt32");
 	ConfMan.setInt("autosave_period", AUTOSAVE_S);   // slot 0, the save screen's AUTO
-	psgmix_install();               // the PCjr player, and the CMS one for songs the PCjr has no version of
+	sdac_init(&dac, MIX_RATE, usb_midi ? 3 : 2, SPEECH_LEAD_MS);
+	psgmix_install();               // the PCjr player, the CMS one for songs the PCjr has no version of, and the AdLib driver's OPL (v5)
+	if (usb_midi || SPEECH_WITHOUT_MIDI) tick_on = add_repeating_timer_us(-TICK_US, tick, NULL, &tick_timer);
 
 	PluginManager::instance().addPluginProvider(new CartPluginProvider());
 	PluginManager::instance().loadAllPlugins();
@@ -1030,7 +1180,7 @@ static void __attribute__((noreturn)) run_on_engine_stack(void) {
 }
 
 int main(void) {
-	static const cvf_config_t cfg = {gbkernel_bin, GBKERNEL_BIN_LEN, handoff_bin, HANDOFF_BIN_LEN};
+	static const cvf_config_t cfg = {scummkernel_bin, SCUMMKERNEL_BIN_LEN, handoff_bin, HANDOFF_BIN_LEN};
 	xip_quad = cvxip_fast();        // quad flash reads: before core 1 and the PSRAM (cvxip.h)
 	cvf_start(&cfg);
 	cvd_start();                    // where it gets to, in the menu's trace (cvdiag.h)
