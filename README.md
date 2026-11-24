@@ -84,7 +84,7 @@ On a Mac with Apple silicon, macOS asks whether to allow the accessory to connec
 
 If you have a real MT-32 or CM-32L, connect it to the computer with a USB MIDI cable. In Parrot Cart MIDI, choose the cable under **Play on**. The program sends the music straight to it, so you don't need ROMs.
 
-On the computer the cart is called "MovieCart MIDI", its old name. Parrot Cart MIDI finds it by that name, or by "Parrot Cart MIDI".
+On the computer the cart is called "Parrot Cart MIDI".
 
 With MIDI playing, Fate of Atlantis's speech plays on the ColecoVision, about a fifth of a second after its text shows.
 

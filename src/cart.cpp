@@ -26,7 +26,7 @@
 // again (the pointer, a cutscene, an actor's message). RESET goes back to the menu.
 //
 // The USB port: plugged into a computer, the cart is its MIDI device,
-// "MovieCart MIDI", and the game's MT-32 music goes there as MIDI (for Munt,
+// "Parrot Cart MIDI", and the game's MT-32 music goes there as MIDI (for Munt,
 // say; ../mac/cvmidi.c routes it); the console's PSG plays none of it, only
 // the speech. Otherwise (a hub, or nothing) it's a host for a USB keyboard
 // and mouse, the music on the PSG and no speech (SPEECH_WITHOUT_MIDI).
@@ -745,7 +745,7 @@ void OSystem_Cart::save_menu() {
 	_menuOpen = false;
 	g_engine->pauseEngine(false);
 	if (act == SAVEMENU_SAVE) {
-		s->requestSave(m.sel, "MovieCart");
+		s->requestSave(m.sel, "Parrot Cart");
 		_lastSlot = m.sel;
 	} else if (act == SAVEMENU_LOAD) {
 		s->requestLoad(m.sel);
@@ -1001,7 +1001,7 @@ bool OSystem_Cart::pollEvent(Common::Event &event) {
 	}
 	if (_saveLoad && g_engine) {
 		Scumm::ScummEngine *s = static_cast<Scumm::ScummEngine *>(g_engine);
-		if (_saveLoad == 1) s->requestSave(1, "MovieCart");
+		if (_saveLoad == 1) s->requestSave(1, "Parrot Cart");
 		else s->requestLoad(1);
 		_saveLoad = 0;
 	}
@@ -1051,7 +1051,7 @@ private:
 // its own instruments and the game's MT-32 music as it is
 class CartMusicPlugin : public MusicPluginObject {
 public:
-	const char *getName() const override { return "MovieCart USB MIDI"; }
+	const char *getName() const override { return "Parrot Cart USB MIDI"; }
 	const char *getId() const override { return "cvmidi"; }
 	MusicDevices getDevices() const override {
 		MusicDevices d;
@@ -1096,7 +1096,7 @@ static bool usb_choose(void) {
 		const bool host = usbmidi_host_seen();
 		if (dt >= (host ? MIDI_ALLOW_US : MIDI_WAIT_US)) break;
 		if (host && !asked && dt >= MIDI_ASK_US) {
-			message("A COMPUTER IS ON THE USB PORT", "ALLOW MOVIECART MIDI ON IT", "FIRE: GO ON WITHOUT MIDI");
+			message("A COMPUTER IS ON THE USB PORT", "ALLOW PARROT CART MIDI ON IT", "FIRE: GO ON WITHOUT MIDI");
 			asked = true;
 		}
 		if (asked) {

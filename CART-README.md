@@ -55,7 +55,7 @@ If a Mac asks to allow the accessory, click Allow. If the TV says a computer is 
 
 For a real MT-32, choose its USB MIDI cable under Play on.
 
-Older versions call the cart MovieCart MIDI. Parrot Cart MIDI finds either name.
+On the computer the cart is called Parrot Cart MIDI.
 
 With nothing plugged into the USB-C port, the music plays on the ColecoVision's sound chip. With MIDI playing, Fate of Atlantis's speech plays on the ColecoVision, about a fifth of a second after its text shows.
 

@@ -27,7 +27,7 @@ static const tusb_desc_device_t desc_device = {
     .bDeviceProtocol = 0,
     .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE,
     .idVendor = 0xCAFE,             // TinyUSB's examples' vendor
-    .idProduct = 0x4C11,            // MovieCart's MIDI (the menu is the SDK's serial port)
+    .idProduct = 0x4C11,            // the cart's MIDI (the menu is the SDK's serial port)
     .bcdDevice = 0x0100,
     .iManufacturer = 1,
     .iProduct = 2,
@@ -47,10 +47,10 @@ static const uint8_t desc_config[] = {
 
 static const char *const strings[] = {
     NULL,                           // 0: the language, below
-    "MovieCart",
-    "MovieCart MIDI",
+    "Parrot Cart",
+    "Parrot Cart MIDI",
     "1",
-    "MovieCart MIDI",
+    "Parrot Cart MIDI",
 };
 
 const uint8_t *tud_descriptor_device_cb(void) { return (const uint8_t *)&desc_device; }

@@ -1,4 +1,4 @@
-// usbmidi_dev.h -- the cart's USB port as a MIDI device, "MovieCart MIDI":
+// usbmidi_dev.h -- the cart's USB port as a MIDI device, "Parrot Cart MIDI":
 // with a computer on the port (its USB-C, the computer the host), the
 // engine's MIDI goes to it, a synth there (Munt, say) playing it.
 //
