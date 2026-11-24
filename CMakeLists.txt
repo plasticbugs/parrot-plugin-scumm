@@ -106,6 +106,6 @@ target_link_libraries(scumm tinyusb_host tinyusb_device)   # one role at a time 
 target_compile_definitions(scumm PRIVATE PICO_RP2040_USB_FAST_IRQ=1)
 pico_enable_stdio_usb(scumm 0)
 pico_enable_stdio_uart(scumm 0)
-cvcart_plugin(scumm ID parrotcart.scumm NAME "SCUMM" VERSION 0.2.14 BY "Parrot Cart"
+cvcart_plugin(scumm ID parrotcart.scumm NAME "SCUMM" VERSION 0.2.15 BY "Parrot Cart"
               HOME /SCUMM OPENS .lfl .000 ICON src/scumm_icon.txt FILE_ICON src/scumm_file_icon.txt XIP
               README CART-README.md)

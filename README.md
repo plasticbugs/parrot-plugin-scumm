@@ -21,7 +21,7 @@ On the ColecoVision controller:
 - Keypad 1 shows the whole screen as one view. Press it again to give the verbs their own view.
 - Hold keypad 7 for a second to save to slot 1, or 9 to load it.
 - Hold keypad # for half a second to open the save and load screen.
-- Press RESET on the console to go back to the menu.
+- Press RESET on the console to go back to the menu, or hold both fire buttons and \* for 2 seconds.
 
 On the save and load screen:
 
